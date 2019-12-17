@@ -1,0 +1,190 @@
+##These are single lines of code used for initial sequence processing, diversity analyses, and exporting files from QIIME2. The QIIME2 version used for all analyses was v2019.4. Steps in the analysis performed in an HPC environment are noted.
+
+#Import data into QIIME2
+
+qiime tools import --type 'SampleData[PairedEndSequencesWithQuality]' --input-path Manifest.csv --output-path paired-end-demux.qza --input-format PairedEndFastqManifestPhred33
+
+#Examine read quality
+
+qiime demux summarize --i-data paired-end-demux.qza --o-visualization paired-end-demux.qzv
+
+#Run DADA2 on Quest with dada2.sh script
+
+#Check results
+
+qiime metadata tabulate --m-input-file dada2-stats.qza --o-visualization dada2-stats.qzv
+
+qiime feature-table summarize --i-table table.qza --o-visualization table.qzv --m-sample-metadata-file leaf_map.txt
+
+#Generate tree
+
+qiime phylogeny align-to-tree-mafft-fasttree --i-sequences rep-seqs.qza --o-alignment aligned-rep-seqs.qza --o-masked-alignment masked-aligned-rep-seqs.qza --o-tree unrooted-tree.qza --o-rooted-tree rooted-tree.qza
+
+#Assign taxonomy on Quest using feature-classifier.sh script
+
+#Filter out chloroplast and mitochondrial sequences
+
+qiime taxa filter-table --i-table table.qza --i-taxonomy taxonomy.qza --p-exclude mitochondria,chloroplast --o-filtered-table table_nomito_nochloro.qza
+
+#filter 294 and 352 because they are outliers (did not cluster with other samples)
+
+qiime feature-table filter-samples --i-table table_nomito_nochloro.qza --m-metadata-file leaf_map.txt --p-where "NOT OrigID='352'" --o-filtered-table table_nomito_nochloro_no352.qza
+
+qiime feature-table filter-samples --i-table table_nomito_nochloro_no352.qza --m-metadata-file leaf_map.txt --p-where "NOT OrigID='294'" --o-filtered-table table_nomito_nochloro_no352_no294.qza
+
+#Remove samples from adolescents
+
+qiime feature-table filter-samples --i-table table_nomito_nochloro_no352_no294.qza --m-metadata-file leaf_map.txt --p-where "NOT Repro_status='Adolescent'" --o-filtered-table table_clean.qza
+
+#Examine the filtered table
+
+qiime feature-table summarize --i-table table_clean.qza --o-visualization table_clean.qzv --m-sample-metadata-file leaf_map.txt
+
+#Filter table for samples with hormones
+
+qiime feature-table filter-samples --i-table table_clean.qza --m-metadata-file leaf_map_r_allhormone.txt --o-filtered-table table_clean_allhormones.qza
+
+#Create taxa barplots
+
+qiime taxa barplot --i-table table_clean.qza --i-taxonomy taxonomy.qza --m-metadata-file leaf_map.txt --o-visualization taxa_plots_clean.qzv
+
+#Diversity analyses
+
+qiime diversity core-metrics-phylogenetic --i-phylogeny rooted-tree.qza --i-table table_clean.qza --p-sampling-depth 8000 --m-metadata-file leaf_map.txt --output-dir /core-metrics-results-8000
+
+qiime diversity alpha-rarefaction --i-table table_clean.qza --i-phylogeny rooted-tree.qza --p-max-depth 11000 --m-metadata-file leaf_map.txt --o-visualization alpha-rarefaction.qzv
+
+#Diversity analyses for samples with hormones
+
+qiime diversity core-metrics-phylogenetic --i-phylogeny rooted-tree.qza --i-table table_clean_allhormones.qza --p-sampling-depth 8000 --m-metadata-file leaf_map_r_allhormone.txt --output-dir core-metrics-results-8000-allhormones
+
+##Diversity analyses on unrarefied data
+
+qiime diversity beta-phylogenetic --i-phylogeny rooted-tree.qza --i-table table_clean.qza --p-metric 'unweighted_unifrac' --output-dir /unweighted_unrarefied
+
+qiime diversity beta-phylogenetic --i-phylogeny rooted-tree.qza --i-table table_clean.qza --p-metric 'weighted_unifrac' --output-dir /weighted_unrarefied
+
+qiime diversity beta-phylogenetic --i-phylogeny rooted-tree.qza --i-table table_clean_allhormones.qza --p-metric 'unweighted_unifrac' --output-dir /unweighted_unrarefied_hormones
+
+qiime diversity beta-phylogenetic --i-phylogeny rooted-tree.qza --i-table table_clean_allhormones.qza --p-metric 'weighted_unifrac' --output-dir /weighted_unrarefied_hormones
+
+#Export various files for analysis in R
+
+qiime tools export --input-path /core-metrics-results-8000/shannon_vector.qza --output-path /alpha_out
+
+qiime tools export --input-path /core-metrics-results-8000/observed_otus_vector.qza --output-path /alpha_out
+
+qiime tools extract --input-path /core-metrics-results-8000/unweighted_unifrac_distance_matrix.qza --output-path /core-metrics-results-8000/
+
+qiime tools extract --input-path /core-metrics-results-8000/weighted_unifrac_distance_matrix.qza --output-path /core-metrics-results-8000/
+
+qiime tools extract --input-path /core-metrics-results-8000-allhormones/unweighted_unifrac_distance_matrix.qza --output-path /core-metrics-results-8000-allhormones/
+
+qiime tools extract --input-path /core-metrics-results-8000-allhormones/weighted_unifrac_distance_matrix.qza --output-path /core-metrics-results-8000-allhormones/
+
+
+qiime tools extract --input-path /unweighted_unrarefied/distance_matrix.qza --output-path /unweighted_unrarefied/
+
+qiime tools extract --input-path /weighted_unrarefied/distance_matrix.qza --output-path /weighted_unrarefied/
+
+qiime tools extract --input-path /unweighted_unrarefied_hormones/distance_matrix.qza --output-path /unweighted_unrarefied_hormones/
+
+qiime tools extract --input-path /weighted_unrarefied_hormones/distance_matrix.qza --output-path /weighted_unrarefied_hormones/
+
+qiime tools export --input-path table_clean.qza --output-path exported
+
+qiime feature-table relative-frequency --i-table table_clean.qza --o-relative-frequency-table /filtered-table-relab.qza
+
+qiime tools export --input-path filtered-table-relab.qza --output-path exported
+
+qiime tools export --input-path table_clean_allhormones.qza --output-path exported
+
+qiime feature-table relative-frequency --i-table table_clean_allhormones.qza --o-relative-frequency-table /filtered-table-allhormones-relab.qza
+
+qiime tools export --input-path filtered-table-allhormones-relab.qza --output-path exported
+
+qiime tools export --input-path /Users/elizabethmallott/Dropbox/Projects/Gut_microbiome/leaf_monkeys/dada2_analysis/taxonomy.qza --output-path exported
+
+cp exported/taxonomy.tsv biom-taxonomy.tsv #edit header
+
+biom add-metadata -i exported/feature-table.biom -o table-with-taxonomy.biom --observation-metadata-fp biom-taxonomy.tsv --sc-separated taxonomy
+
+biom convert -i /exported/feature-table.biom -o /exported/feature-table-full.tsv --to-tsv
+
+#Make relative abundance tables at Phyla/family/genus levels
+
+qiime taxa collapse --i-table /table_clean.qza --i-taxonomy /taxonomy.qza --p-level 2 --o-collapsed-table /table-clean-level2.qza
+
+qiime taxa collapse --i-table /table_clean.qza --i-taxonomy taxonomy.qza --p-level 5 --o-collapsed-table table-clean-level5.qza
+
+qiime taxa collapse --i-table table_clean.qza --i-taxonomy taxonomy.qza --p-level 6 --o-collapsed-table table-clean-level6.qza 
+
+qiime feature-table relative-frequency --i-table table-clean-level2.qza --o-relative-frequency-table clean-table-level2-relab.qza
+
+qiime feature-table relative-frequency --i-table table-clean-level5.qza --o-relative-frequency-table clean-table-level5-relab.qza
+
+qiime feature-table relative-frequency --i-table table-clean-level6.qza --o-relative-frequency-table clean-table-level6-relab.qza
+
+qiime tools export --input-path clean-table-level2-relab.qza --output-path exported
+
+qiime tools export --input-path clean-table-level5-relab.qza --output-path exported
+
+qiime tools export --input-path clean-table-level6-relab.qza --output-path exported
+
+biom convert -i feature-table-level2.biom -o feature-table-level2.tsv --to-tsv
+
+biom convert -i feature-table-level5.biom -o feature-table-level5.tsv --to-tsv
+
+biom convert -i feature-table-level6.biom -o feature-table-level6.tsv --to-tsv
+
+#Create and export presence/absence tables for family/genera
+
+qiime feature-table presence-absence --i-table table_clean.qza --o-presence-absence-table table_clean_pa.qza
+
+qiime feature-table presence-absence --i-table table-clean-level2.qza --o-presence-absence-table table-clean-level2-pa.qza
+
+qiime feature-table presence-absence --i-table table-clean-level5.qza --o-presence-absence-table table-clean-level5-pa.qza
+
+qiime feature-table presence-absence --i-table table-clean-level6.qza --o-presence-absence-table table-clean-level6-pa.qza
+
+qiime tools export --input-path table_clean_pa.qza --output-path /exported/feature-table-pa-full
+ 
+qiime tools export --input-path table-clean-level2-pa.qza --output-path /exported/feature-table-pa-level2
+
+qiime tools export --input-path table-clean-level5-pa.qza --output-path /exported/feature-table-pa-level5
+
+qiime tools export --input-path table-clean-level6-pa.qza --output-path /exported/feature-table-pa-level6
+
+biom convert -i /exported/feature-table-pa-full/feature-table.biom -o feature-table-pa-full.tsv --to-tsv
+
+biom convert -i /exported/feature-table-pa-level2/feature-table.biom -o feature-table-pa-level2.tsv --to-tsv
+
+biom convert -i /exported/feature-table-pa-level5/feature-table.biom -o feature-table-pa-level5.tsv --to-tsv
+
+biom convert -i /feature-table-pa-level6/feature-table.biom -o feature-table-pa-level6.tsv --to-tsv
+
+
+
+
+##These are single lines of code used for the PICRUSt analysis. All code was run in the Quest high performance computing environment at Northwestern U.
+
+module load python/anaconda3.6
+
+source activate picrust2
+
+place_seqs.py -s /projects/b1057/liz/leaf_monkeys/dna-sequences.fasta -o /projects/b1057/liz/leaf_monkeys/picrust_tree.tre -p 1 --intermediate /projects/b1057/liz/leaf_monkeys/intermediate/place_seqs
+
+hsp.py -i 16S -t /projects/b1057/liz/leaf_monkeys/picrust_tree.tre -o /projects/b1057/liz/leaf_monkeys/marker_predicted_and_nsti.tsv.gz -p 1 -n
+
+hsp.py -i EC -t /projects/b1057/liz/leaf_monkeys/picrust_tree.tre -o /projects/b1057/liz/leaf_monkeys/EC_predicted.tsv.gz -p 1
+
+metagenome_pipeline.py -i /projects/b1057/liz/leaf_monkeys/feature-table.biom -m /projects/b1057/liz/leaf_monkeys/marker_predicted_and_nsti.tsv.gz -f /projects/b1057/liz/leaf_monkeys/EC_predicted.tsv.gz -o /projects/b1057/liz/leaf_monkeys/EC_metagenome_out --metagenome_contrib --strat_out
+
+pathway_pipeline.py -i /projects/b1057/liz/leaf_monkeys/EC_metagenome_out/pred_metagenome_strat.tsv.gz -o /projects/b1057/liz/leaf_monkeys/pathways_out -p 1
+
+add_descriptions.py -i /projects/b1057/liz/leaf_monkeys/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz -m EC -o /projects/b1057/liz/leaf_monkeys/EC_metagenome_out/pred_metagenome_unstrat_descrip.tsv.gz
+
+add_descriptions.py -i /projects/b1057/liz/leaf_monkeys/pathways_out/path_abun_unstrat.tsv.gz -m METACYC -o /projects/b1057/liz/leaf_monkeys/pathways_out/path_abun_unstrat_descript.tsv.gz
+
+
+
