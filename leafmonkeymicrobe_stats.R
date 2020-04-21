@@ -1,7 +1,10 @@
 #Alpha diversity----
 library(tidyverse)
 library(nlme)
+library(car)
 library(multcomp)
+library(lme4)
+library(performance)
 
 metadata = read.csv("leaf_map_r_8000.csv", header = T)
 
@@ -13,36 +16,51 @@ alpha = inner_join(metadata, faith, by = "SampleID") %>%
   inner_join(otus, by = "SampleID") %>% 
   inner_join(shannon, by = "SampleID")
 
-alpha_filter = filter(alpha, Phytoprogestin == "Yes")
+alpha = as.data.frame(alpha)
 
 o<-lme(fixed=observed_otus~Repro_status + Rainfall, data=alpha, 
        random= ~1|Individual)
 summary(o)
-anova(o)
+Anova(o)
 summary(glht(o,linfct=mcp(Repro_status="Tukey")))
+r2_nakagawa(lmer(observed_otus~Repro_status + (1|Individual), data = alpha))
 
 s<-lme(fixed=shannon~Repro_status + Rainfall, data=alpha, random= ~1|Individual)
 summary(s)
-anova(s)
+Anova(s)
 summary(glht(s,linfct=mcp(Repro_status="Tukey")))
 
-of<-lme(fixed=observed_otus~logP_avg3 + logE_avg3 + Repro_status + Rainfall, 
-       data=alpha_filter, random= ~1|Individual, na.action = na.omit)
-summary(of)
-anova(of)
-summary(glht(of,linfct=mcp(Repro_status="Tukey")))
+oh<-lme(fixed=observed_otus~logP_avg3*Phytoprogestin + logE_avg3 + Repro_status + 
+          Rainfall, data=alpha, random= ~1|Individual, na.action = na.omit)
+summary(oh)
+Anova(oh)
+summary(glht(oh,linfct=mcp(Repro_status="Tukey")))
+r2_nakagawa(lmer(observed_otus~logP_avg3 + (1|Individual), na.action = na.omit, data = alpha))
+r2_nakagawa(lmer(observed_otus~logE_avg3 + (1|Individual), na.action = na.omit, data = alpha))
+r2_nakagawa(lmer(observed_otus~logP_avg3*Phytoprogestin + logE_avg3 + Repro_status + 
+                   Rainfall + (1|Individual), na.action = na.omit, data = alpha))
 
-sf<-lme(fixed=shannon~logP_avg3 + logE_avg3 + Repro_status + Rainfall, 
-       data=alpha_filter, random= ~1|Individual, na.action = na.omit)
-summary(sf)
-anova(sf)
-summary(glht(sf,linfct=mcp(Repro_status="Tukey")))
+sh<-lme(fixed=shannon~logP_avg3*Phytoprogestin + logE_avg3 + Repro_status + 
+          Rainfall, data=alpha, random= ~1|Individual, na.action = na.omit)
+summary(sh)
+Anova(sh)
+summary(glht(sh,linfct=mcp(Repro_status="Tukey")))
+r2_nakagawa(lmer(shannon~logP_avg3 + (1|Individual), na.action = na.omit, data = alpha))
+r2_nakagawa(lmer(shannon~logE_avg3 + (1|Individual), na.action = na.omit, data = alpha))
+r2_nakagawa(lmer(shannon~logP_avg3*Phytoprogestin + logE_avg3 + Repro_status + 
+                   Rainfall + (1|Individual), na.action = na.omit, data = alpha))
 
 #Alpha diversity plots----
 library(ggpubr)
+library(grid)
 
 alpha$Repro_status<-factor(alpha$Repro_status,
                            levels=c("Cycling","Pregnant","Lactating"))
+
+margr1 = grobTree(textGrob(expression(italic("marginal "*R^2*" = 0.218")), 
+                           x = 0.05, y = 0.05, hjust = 0, gp = gpar(fontsize = 10)))
+margr2 = grobTree(textGrob(expression(italic("marginal "*R^2*" = 0.189")), 
+                           x = 0.05, y = 0.05, hjust = 0, gp = gpar(fontsize = 10)))
 
 a = ggboxplot(alpha, x = "Repro_status", y = "shannon", fill = "Repro_status") +
   scale_fill_manual(values = c("#9fc7eb", "#d44b8e", "#8e79ba"), 
@@ -57,20 +75,22 @@ a = ggpar(a, xlab = "Reproductive Status", xlegend.title = "Reproductive Status"
   stat_compare_means(comparisons = list(c("Pregnant", "Cycling")), 
                      label = "p.signif",  symnum.args = 
                        list(cutpoints = c(0, 0.0001, 0.001, 0.05, 0.1, 1),
-                            symbols = c("****", "***", "**", "*", "ns")))
+                            symbols = c("****", "***", "**", "*", "ns"))) 
 
 b = ggscatter(alpha, x = "logP_avg3", y = "shannon", add = "reg.line", 
               color = "Phytoprogestin", add.params = list(color = "black")) +
   scale_color_manual(values = c("#c4e6ff", "#2d516c"))
 b = ggpar(b, xlab = "Fecal Progestin (log)", ylab = "Shannon Diversity Index",
-          legend.title = "Phytoprogestin\nPeriod", legend = "right")
+          legend.title = "Phytoprogestin\nPeriod", legend = "right") + 
+  annotation_custom(margr1)
 
 
 c = ggscatter(alpha, x = "logE_avg3", y = "shannon", add = "reg.line", 
               color = "Phytoprogestin", add.params = list(color = "black")) +
   scale_color_manual(values = c("#b0b0b0", "#4d4d4d"))
 c = ggpar(c, xlab = "Fecal Estrogen (log)", ylab = "Shannon Diversity Index",
-          legend.title = "Phytoprogestin\nPeriod", legend = "right")
+          legend.title = "Phytoprogestin\nPeriod", legend = "right") + 
+  annotation_custom(margr1)
 
 d = ggboxplot(alpha, x = "Repro_status", y = "observed_otus", 
               fill = "Repro_status") +
@@ -92,14 +112,16 @@ e = ggscatter(alpha, x = "logP_avg3", y = "observed_otus", add = "reg.line",
               color = "Phytoprogestin", add.params = list(color = "black")) +
   scale_color_manual(values = c("#c4e6ff", "#2d516c"))
 e = ggpar(e, xlab = "Fecal Progestin (log)", ylab = "Observed OTUs",
-          legend.title = "Phytoprogestin\nPeriod", legend = "right") 
+          legend.title = "Phytoprogestin\nPeriod", legend = "right") + 
+  annotation_custom(margr2)
 
 
 f = ggscatter(alpha, x = "logE_avg3", y = "observed_otus", add = "reg.line", 
               color = "Phytoprogestin", add.params = list(color = "black")) +
   scale_color_manual(values = c("#b0b0b0", "#4d4d4d")) 
 f = ggpar(f, xlab = "Fecal Estrogen (log)", ylab = "Observed OTUs",
-          legend.title = "Phytoprogestin\nPeriod", legend = "right")
+          legend.title = "Phytoprogestin\nPeriod", legend = "right") + 
+  annotation_custom(margr2)
 
 tiff(file="alpha_rare_combined_forpub_box.tif", res=300, width=12, height=6, 
      units="in")
@@ -161,10 +183,13 @@ weighted.mds <- metaMDS(weighted, trymax=500)
 weighted.mds.points <- weighted.mds$points
 weighted.mds.points2 <- merge(x = weighted.mds.points, y = metadata_beta, 
                               by.x = "row.names", by.y = "SampleID")
+grob1 = grobTree(textGrob(expression(italic(atop(R^2*" = 0.023", "p = 0.444"))), 
+                                     x = 0.85, y = 0.1, hjust = 0, 
+                                     gp = gpar(fontsize = 12)))
 weighted_nmds <- ggplot(weighted.mds.points2, aes(x = MDS1, y = MDS2, 
                                                   color = Repro_status, 
                                                   shape = Season)) + 
-  geom_point(size=3) + scale_color_manual(name = "Reproductive\nStatus", 
+  geom_point(size=4) + scale_color_manual(name = "Reproductive\nStatus", 
                                           values = c("#9fc7eb", "#d44b8e", 
                                                      "#8e79ba")) +
   theme(panel.background = element_rect(fill = 'white', colour = 'black'), 
@@ -176,17 +201,20 @@ weighted_nmds <- ggplot(weighted.mds.points2, aes(x = MDS1, y = MDS2,
         legend.text = element_text(size = rel(1.8))) + 
   ggtitle("Weighted UniFrac") +
   stat_ellipse(aes(x = MDS1, y = MDS2, group = Repro_status, color = Repro_status), 
-               type = "t")
+               type = "t") + annotation_custom(grob1)
 
 #Unweighted full sample set
 unweighted.mds <- metaMDS(unweighted, trymax=500)
 unweighted.mds.points <- unweighted.mds$points
 unweighted.mds.points2 <- merge(x = unweighted.mds.points, y = metadata_beta, 
                                 by.x = "row.names", by.y = "SampleID")
+grob2 = grobTree(textGrob(expression(italic(atop(R^2*" = 0.032", "p = 0.049"))), 
+                          x = 0.85, y = 0.1, hjust = 0, 
+                          gp = gpar(fontsize = 12)))
 unweighted_nmds <- ggplot(unweighted.mds.points2, aes(x = MDS1, y = MDS2, 
                                                       color = Repro_status, 
                                                       shape = Season)) + 
-  geom_point(size=3) + scale_color_manual(name = "Reproductive Status", 
+  geom_point(size=4) + scale_color_manual(name = "Reproductive Status", 
                                           values = c("#9fc7eb", "#d44b8e", 
                                                      "#8e79ba")) +
   theme(panel.background = element_rect(fill = 'white', colour = 'black'), 
@@ -198,7 +226,7 @@ unweighted_nmds <- ggplot(unweighted.mds.points2, aes(x = MDS1, y = MDS2,
         legend.text = element_text(size = rel(1.8))) + 
   ggtitle("Unweighted UniFrac") +
   stat_ellipse(aes(x = MDS1, y = MDS2, group = Repro_status, color = Repro_status), 
-               type = "t")
+               type = "t") + annotation_custom(grob2)
 
 #Weighted samples with hormones
 weighted2.mds <- metaMDS(weighted_bgroup, trymax=500)
@@ -206,10 +234,13 @@ weighted2.mds.points <- weighted2.mds$points
 weighted2.mds.points2 <- merge(x = weighted2.mds.points, 
                                y = metadata_beta_hormones, 
                                by.x = "row.names", by.y = "SampleID")
+grob3 = grobTree(textGrob(expression(italic(atop(R^2*" = 0.043", "p = 0.010"))), 
+                          x = 0.85, y = 0.1, hjust = 0, 
+                          gp = gpar(fontsize = 12)))
 weighted2_nmds <- ggplot(weighted2.mds.points2, aes(x = MDS1, y = logP_avg3, 
                                                     color = logP_avg3, 
                                                     shape = Season)) + 
-  geom_point(size=3, color = c("#2d516c")) +
+  geom_point(size=4, color = c("#2d516c")) +
   theme(panel.background = element_rect(fill = 'white', colour = 'black'), 
         legend.key=element_blank()) + 
   theme(axis.title.x=element_text(size=rel(2)), 
@@ -218,7 +249,7 @@ weighted2_nmds <- ggplot(weighted2.mds.points2, aes(x = MDS1, y = logP_avg3,
         legend.title = element_text(size=rel(2)),
         legend.text = element_text(size = rel(1.8))) + 
   labs(y = "Fecal Progestin (log)") +
-  ggtitle("Weighted UniFrac")
+  ggtitle("Weighted UniFrac") + annotation_custom(grob3)
 
 #Unweighted samples with hormones
 unweighted2.mds <- metaMDS(unweighted_bgroup, trymax=500)
@@ -226,11 +257,13 @@ unweighted2.mds.points <- unweighted2.mds$points
 unweighted2.mds.points2 <- merge(x = unweighted2.mds.points, 
                                  y = metadata_beta_hormones, 
                                  by.x = "row.names", by.y = "SampleID")
-
+grob4 = grobTree(textGrob(expression(italic(atop(R^2*" = 0.029", "p = 0.004"))), 
+                          x = 0.85, y = 0.1, hjust = 0, 
+                          gp = gpar(fontsize = 12)))
 unweighted2_nmds <- ggplot(unweighted2.mds.points2, aes(x = MDS1, y = logP_avg3, 
                                                         color = logP_avg3, 
                                                         shape = Season)) + 
-  geom_point(size=3, color = c("#2d516c")) +
+  geom_point(size=4, color = c("#2d516c")) +
   theme(panel.background = element_rect(fill = 'white', colour = 'black'), 
         legend.key=element_blank()) + 
   theme(axis.title.x=element_text(size=rel(2)), 
@@ -239,7 +272,7 @@ unweighted2_nmds <- ggplot(unweighted2.mds.points2, aes(x = MDS1, y = logP_avg3,
         legend.title = element_text(size=rel(2)),
         legend.text = element_text(size = rel(1.8))) + 
   labs(y = "Fecal Progestin (log)") +
-  ggtitle("Unweighted UniFrac")
+  ggtitle("Unweighted UniFrac") + annotation_custom(grob4)
 
 #Combined NMDS plots
 library(cowplot)
@@ -706,7 +739,7 @@ genus_estr_hormones_corrected = bind_cols(genus_estr_hormones_nona,
 write.csv(genus_estr_hormones_corrected, "genus_estr_hormones_corrected.csv")
 
 
-#Phyla resence-absence GLMMs----
+#Phyla presence-absence GLMMs----
 library(multcomp)
 library(lme4)
 library(car)
@@ -801,7 +834,7 @@ summary(tene)
 Anova(tene)
 summary(glht(tene,linfct=mcp(Repro_status="Tukey")))
 
-#Family resence-absence GLMMs----
+#Family presence-absence GLMMs----
 library(multcomp)
 library(lme4)
 library(car)
@@ -973,7 +1006,7 @@ family_ebypp_hormones_corrected = bind_cols(family_ebypp_hormones_nona,
 write.csv(family_ebypp_hormones_corrected, "family_ebypp_hormones_pa_corrected.csv")
 
 
-#Genus resence-absence GLMMs----
+#Genus presence-absence GLMMs----
 library(multcomp)
 library(lme4)
 library(car)
